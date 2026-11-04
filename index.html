@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Modem Panel</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; --accent: #2f6fde; }
+  body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, sans-serif; max-width: 760px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .muted { opacity: .65; }
+  section { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  dl { display: grid; grid-template-columns: 190px 1fr; gap: 6px 12px; margin: 0; }
+  dt { opacity: .65; } dd { margin: 0; }
+  button { font: inherit; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  input, textarea { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; box-sizing: border-box; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .chips button { padding: 4px 10px; font-size: 13px; }
+  .answer { white-space: pre-wrap; margin-top: 10px; padding: 10px; border-radius: 8px; background: #8881; min-height: 1em; }
+  .error { color: #d33; }
+  .sms { border-top: 1px solid var(--line); padding: 8px 0; }
+  .sms:first-child { border-top: 0; }
+  .bar { display: inline-block; width: 120px; height: 8px; background: #8883; border-radius: 4px; vertical-align: middle; margin-right: 8px; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Modem Panel</h1>
+<div class="muted">Панель для USB-модемов Huawei на macOS</div>
+
+<section id="storage" hidden>
+  <h2>Модем в режиме диска</h2>
+  <p>Huawei при подключении притворяется компакт-диском с программой. Чтобы работать с симкой, его нужно переключить в режим модема. macOS спросит пароль администратора.</p>
+  <button class="primary" id="switchBtn">Переключить в режим модема</button>
+  <div class="answer" id="switchOut"></div>
+</section>
+
+<section id="absent" hidden>
+  <h2>Модем не найден</h2>
+  <p>Подключите модем Huawei к USB. Страница проверит его сама.</p>
+</section>
+
+<div id="main" hidden>
+  <section>
+    <div class="row" style="justify-content: space-between"><h2>Симка и сеть</h2><button id="refreshBtn">Обновить</button></div>
+    <dl id="status"></dl>
+  </section>
+
+  <section>
+    <h2>USSD-запрос</h2>
+    <div class="row">
+      <input id="ussdCode" placeholder="*100#" style="width: 160px">
+      <button class="primary" id="ussdBtn">Отправить</button>
+    </div>
+    <div class="row chips" style="margin-top: 8px">
+      <span class="muted">Баланс:</span>
+      <button data-code="*100#">Мегафон, МТС *100#</button>
+      <button data-code="*102#">Билайн *102#</button>
+      <button data-code="*105#">Т2 *105#</button>
+    </div>
+    <div class="row chips" style="margin-top: 6px">
+      <span class="muted">Свой номер:</span>
+      <button data-code="*205#">Мегафон *205#</button>
+      <button data-code="*111*0887#">МТС *111*0887#</button>
+      <button data-code="*110*10#">Билайн *110*10#</button>
+      <button data-code="*201#">Т2 *201#</button>
+    </div>
+    <div class="answer" id="ussdOut"></div>
+  </section>
+
+  <section>
+    <div class="row" style="justify-content: space-between"><h2>SMS</h2><button id="smsRefresh">Обновить</button></div>
+    <div id="smsList" class="muted">—</div>
+    <h2 style="margin-top: 16px">Отправить SMS</h2>
+    <div class="row"><input id="smsTo" placeholder="+79991234567" style="width: 200px"></div>
+    <textarea id="smsText" rows="3" style="width: 100%; margin-top: 8px" placeholder="Текст сообщения"></textarea>
+    <div class="row" style="margin-top: 8px"><button class="primary" id="smsSend">Отправить</button><span id="smsOut"></span></div>
+  </section>
+
+  <section>
+    <h2>Модем</h2>
+    <dl id="info"></dl>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function fill(dl, rows) {
+  dl.replaceChildren(...rows.flatMap(([k, v]) => {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd");
+    if (v instanceof Node) dd.append(v); else dd.textContent = v ?? "—";
+    return [dt, dd];
+  }));
+}
+
+function signal(p) {
+  if (p == null) return "нет сигнала";
+  const wrap = document.createElement("span");
+  wrap.innerHTML = `<span class="bar"><i style="width:${p}%"></i></span>`;
+  wrap.append(`${p}%`);
+  return wrap;
+}
+
+function busy(btn, on) { btn.disabled = on; }
+
+function showError(el, e) { el.innerHTML = ""; el.className = "answer error"; el.textContent = e.message; }
+
+async function loadStatus() {
+  try {
+    const s = await api("/api/status");
+    fill($("status"), [
+      ["Симка", s.sim], ["Оператор симки (код)", s.sim_operator_code], ["Сеть", s.operator],
+      ["Регистрация", s.registration], ["Тип сети", s.network], ["Сигнал", signal(s.signal_percent)],
+    ]);
+  } catch (e) { fill($("status"), [["Ошибка", e.message]]); }
+}
+
+async function loadInfo() {
+  try {
+    const i = await api("/api/info");
+    fill($("info"), [
+      ["Модель", `${i.manufacturer ?? ""} ${i.model ?? ""}`.trim()], ["Прошивка", i.firmware],
+      ["Железо", i.hardware], ["IMEI", i.imei], ["Привязка к оператору", i.lock],
+    ]);
+  } catch (e) { fill($("info"), [["Ошибка", e.message]]); }
+}
+
+async function loadSms() {
+  const list = $("smsList");
+  try {
+    const msgs = await api("/api/sms");
+    if (!msgs.length) { list.textContent = "Сообщений нет"; return; }
+    list.replaceChildren(...msgs.map(m => {
+      const div = document.createElement("div"); div.className = "sms";
+      const head = document.createElement("div"); head.className = "muted";
+      head.textContent = `${m.from} · ${m.date}`;
+      const text = document.createElement("div"); text.textContent = m.text;
+      const del = document.createElement("button"); del.textContent = "Удалить"; del.style.marginTop = "4px";
+      del.onclick = async () => { await api("/api/sms/delete", {index: m.index}); loadSms(); };
+      div.append(head, text, del);
+      return div;
+    }));
+  } catch (e) { list.textContent = e.message; }
+}
+
+async function sendUssd(code) {
+  const out = $("ussdOut"), btn = $("ussdBtn");
+  out.className = "answer"; out.textContent = "Жду ответ оператора…"; busy(btn, true);
+  try { out.textContent = (await api("/api/ussd", {code})).answer; }
+  catch (e) { showError(out, e); }
+  finally { busy(btn, false); }
+}
+
+let shownMode;
+async function poll() {
+  let mode = null;
+  try { mode = (await api("/api/device")).mode; } catch {}
+  if (mode !== shownMode) {
+    shownMode = mode;
+    $("storage").hidden = mode !== "storage";
+    $("absent").hidden = mode !== null;
+    $("main").hidden = mode !== "modem";
+    if (mode === "modem") { loadStatus(); loadInfo(); loadSms(); }
+  }
+}
+
+$("switchBtn").onclick = async () => {
+  const out = $("switchOut"), btn = $("switchBtn");
+  out.className = "answer"; out.textContent = "Переключаю, это до 20 секунд…"; busy(btn, true);
+  try { await api("/api/switch", {}); out.textContent = ""; poll(); }
+  catch (e) { showError(out, e); }
+  finally { busy(btn, false); }
+};
+$("refreshBtn").onclick = loadStatus;
+$("smsRefresh").onclick = loadSms;
+$("ussdBtn").onclick = () => sendUssd($("ussdCode").value.trim());
+document.querySelectorAll("[data-code]").forEach(b => b.onclick = () => { $("ussdCode").value = b.dataset.code; sendUssd(b.dataset.code); });
+$("smsSend").onclick = async () => {
+  const out = $("smsOut"), btn = $("smsSend");
+  out.className = ""; out.textContent = "Отправляю…"; busy(btn, true);
+  try { await api("/api/sms", {number: $("smsTo").value.trim(), text: $("smsText").value}); out.textContent = "Отправлено"; }
+  catch (e) { out.className = "error"; out.textContent = e.message; }
+  finally { busy(btn, false); }
+};
+
+poll();
+setInterval(poll, 3000);
+</script>
+</body>
+</html>
