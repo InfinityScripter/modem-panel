@@ -18,7 +18,7 @@
 
 ```sh
 brew install libusb
-git clone <адрес репозитория> modem-panel
+git clone https://github.com/InfinityScripter/modem-panel.git
 cd modem-panel
 ./run.sh
 ```
