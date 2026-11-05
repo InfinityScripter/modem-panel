@@ -24,6 +24,12 @@ to the modem directly over USB (libusb), so no drivers are needed.
 
 No voice calls: carrier firmware usually disables voice.
 
+## Unlocking (operator lock)
+
+Most of these sticks are locked to a carrier. The lock can be removed **for free**
+with a code computed from the IMEI — no paid service needed. The tool and the full
+list of supported models live in **[`unlock/`](unlock/README.md)**.
+
 ## Install and run
 
 ```sh

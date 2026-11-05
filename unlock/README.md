@@ -30,6 +30,25 @@ enter the computed candidates (usually 1–2), never random numbers.
 
 Tested on a Huawei E352 (MegaFon, firmware 11.102.27.00.209): the V2 code worked.
 
+## Supported models
+
+This works for Huawei USB modems that accept the `AT^CARDLOCK` command and use an
+IMEI-based unlock code — essentially the whole E-series / K-series 3G stick
+family. Known-compatible models include:
+
+- **E-series:** E153, E156, E160, E169, E170, E171, E172, E173, E176, E177, E180,
+  E182, E220, E226, E270, E271, E272, E303, E352, E353, E367, E369, E372, E398,
+  E1550, E1552, E1690, E1750, E1762, E1820, E3131, E3531
+- **K-series (rebranded by carriers):** K3565, K3715, K3765, K4505, K4511
+
+Carrier-branded versions (MegaFon, MTS, Beeline, Vodafone, and others) are the
+same hardware and are covered too.
+
+Not covered: newer LTE sticks that moved the lock out of `AT^CARDLOCK` (some
+E3372h and later), and non-Huawei modems. If `AT^CARDLOCK?` returns a
+`<status>,<attempts>,<used>` line, your modem is of the supported kind; if the
+command returns `ERROR`, it is not.
+
 ## Algorithm
 
 The code algorithm is not secret: it was reverse-engineered by the community long
