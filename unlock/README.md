@@ -1,38 +1,41 @@
-# Разблокировка (снятие привязки к оператору)
+# Unlock (removing the operator lock)
 
-Старые USB-модемы Huawei (E352, E173, E1550 и похожие) часто привязаны к
-оператору. Привязку можно снять бесплатно кодом, который считается по IMEI.
+*Русская версия: [README.ru.md](README.ru.md).*
 
-## Как это работает
+Old Huawei USB modems (E352, E173, E1550 and similar) are often locked to a
+carrier. The lock can be removed for free with a code computed from the IMEI.
 
-- `hwcalc.py` — калькулятор кода по 15-значному IMEI. Считает четыре варианта
-  (V1, V2, V3/201 и Flash) по открытому, многократно проверенному алгоритму.
-  Встроенные тест-векторы проверяют расчёт при каждом запуске.
-- `diag.py` — клиент служебного порта Qualcomm (DIAG) поверх libusb: читает
-  версию прошивки, серийный номер и ячейки памяти модема напрямую, без драйверов.
+## How it works
 
-## Как разблокировать
+- `hwcalc.py` is an unlock-code calculator for a 15-digit IMEI. It computes four
+  variants (V1, V2, V3/201 and Flash) using the open, widely verified algorithm.
+  Built-in test vectors check the computation on every run.
+- `diag.py` is a Qualcomm DIAG (service port) client over libusb: it reads the
+  firmware version, serial number and the modem's memory cells directly, with no
+  drivers.
 
-1. Узнайте IMEI модема (в панели в разделе «Модем», или командой `ATI`).
-2. Посчитайте коды:
+## How to unlock
+
+1. Get the modem's IMEI (in the panel under "Modem", or with the `ATI` command).
+2. Compute the codes:
    ```sh
    python3 hwcalc.py <IMEI>
    ```
-3. Вставьте симку другого оператора. Введите код командой `AT^CARDLOCK="<код>"`
-   на порту модема. Начните с V2 и V3/201, а не с V1.
+3. Insert a SIM from another carrier. Enter the code with `AT^CARDLOCK="<code>"`
+   on the modem's port. Try V2 and V3/201 before V1.
 
-**Важно про попытки.** У модема около 10 попыток ввода. Не перебирайте коды
-подряд: при исчерпании попыток модем блокируется навсегда. Вводите только
-посчитанные кандидаты (обычно 1–2), а не случайные числа.
+**About the attempts.** The modem allows roughly 10 code attempts. Do not try
+codes at random: when the attempts run out the modem is locked permanently. Only
+enter the computed candidates (usually 1–2), never random numbers.
 
-Проверено на Huawei E352 (MegaFon, прошивка 11.102.27.00.209): подошёл код V2.
+Tested on a Huawei E352 (MegaFon, firmware 11.102.27.00.209): the V2 code worked.
 
-## Алгоритм
+## Algorithm
 
-Алгоритм расчёта не секретный: он давно разобран сообществом и опубликован.
-`hwcalc.py` — самостоятельная реализация на Python 3 по открытым источникам
-(forth32/huaweicalc, plugnburn gist и другие).
+The code algorithm is not secret: it was reverse-engineered by the community long
+ago and is published. `hwcalc.py` is a standalone Python 3 reimplementation based
+on open sources (forth32/huaweicalc, the plugnburn gist and others).
 
-Ветки алгоритма 0–5 проверены эталонными парами IMEI-код. Ветка 6 (её выбирают
-редкие IMEI) пока не выверена и помечена в выводе; большинство 3G-модемов
-используют ветки 0–1.
+Algorithm branches 0–5 are verified against known IMEI/code test vectors. Branch
+6 (chosen by rare IMEIs) is not yet verified and is flagged in the output; most
+3G sticks use branches 0–1.
