@@ -83,6 +83,11 @@
   <section>
     <h2>Модем</h2>
     <dl id="info"></dl>
+    <div id="cdBox" hidden style="margin-top: 12px">
+      <p>Модем при каждом подключении сначала включается как диск, и его приходится переключать с паролем. Можно выключить это в самом модеме. Вернуть можно командой <code>AT^SETPORT</code> со старым значением.</p>
+      <button id="cdBtn">Всегда включаться как модем</button>
+      <span id="cdOut"></span>
+    </div>
   </section>
 </div>
 
@@ -135,7 +140,9 @@ async function loadInfo() {
     fill($("info"), [
       ["Модель", `${i.manufacturer ?? ""} ${i.model ?? ""}`.trim()], ["Прошивка", i.firmware],
       ["Железо", i.hardware], ["IMEI", i.imei], ["Привязка к оператору", i.lock],
+      ["При подключении", i.cd_on_startup == null ? null : (i.cd_on_startup ? "сначала включается как диск" : "сразу включается как модем")],
     ]);
+    $("cdBox").hidden = i.cd_on_startup !== true;
   } catch (e) { fill($("info"), [["Ошибка", e.message]]); }
 }
 
@@ -183,6 +190,13 @@ $("switchBtn").onclick = async () => {
   out.className = "answer"; out.textContent = "Переключаю, это до 20 секунд…"; busy(btn, true);
   try { await api("/api/switch", {}); out.textContent = ""; poll(); }
   catch (e) { showError(out, e); }
+  finally { busy(btn, false); }
+};
+$("cdBtn").onclick = async () => {
+  const out = $("cdOut"), btn = $("cdBtn");
+  out.className = ""; out.textContent = "Сохраняю…"; busy(btn, true);
+  try { await api("/api/disable-cd", {}); out.textContent = ""; loadInfo(); }
+  catch (e) { out.className = "error"; out.textContent = e.message; }
   finally { busy(btn, false); }
 };
 $("refreshBtn").onclick = loadStatus;

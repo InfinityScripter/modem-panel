@@ -40,6 +40,7 @@ ROUTES = {
     ("GET", "/api/device"): lambda body: device_state(),
     ("POST", "/api/switch"): lambda body: switch(),
     ("GET", "/api/info"): lambda body: with_modem(lambda m: m.info()),
+    ("POST", "/api/disable-cd"): lambda body: with_modem(lambda m: m.disable_cd_on_startup()) or {"cd_on_startup": False},
     ("GET", "/api/status"): lambda body: with_modem(lambda m: m.status()),
     ("POST", "/api/ussd"): lambda body: {"answer": with_modem(lambda m: m.ussd(body["code"]))},
     ("GET", "/api/sms"): lambda body: with_modem(lambda m: m.list_sms()),

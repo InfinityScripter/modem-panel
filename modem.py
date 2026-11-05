@@ -55,16 +55,53 @@ def switch_to_modem():
         raise ModemError("Модем Huawei не подключён")
     if mode == "modem":
         return
+    # While the modem's virtual CD is attached, macOS holds the USB interface.
+    eject_virtual_cd()
+    # On macOS detach re-enumerates the device in capture mode: detach once,
+    # let it settle, then look the device up again. Detaching again on every
+    # retry restarts the re-enumeration and claim never succeeds.
     try:
         dev.detach_kernel_driver(0)
-    except usb.core.USBError:
+        log("detached")
+    except usb.core.USBError as e:
+        log(f"detach failed: {e}")
+    usb.util.dispose_resources(dev)
+    error = None
+    for attempt in range(5):
+        time.sleep(1)
+        dev, mode = find_device()
+        if mode == "modem":
+            return
+        if dev is None:
+            continue
+        try:
+            intf = dev.get_active_configuration()[(0, 0)]
+            out = usb.util.find_descriptor(
+                intf,
+                custom_match=lambda e: usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_OUT,
+            )
+            out.write(SWITCH_MESSAGE)
+            log(f"attempt {attempt}: switch message sent")
+            return
+        except usb.core.USBError as e:
+            error = e
+            log(f"attempt {attempt}: write failed: {e}")
+            usb.util.dispose_resources(dev)
+    raise ModemError(f"macOS не отдаёт модем: {error}. Переподключите модем и попробуйте ещё раз")
+
+
+def log(message):
+    try:
+        with open("/tmp/modem-panel-switch.log", "a") as f:
+            f.write(time.strftime("%H:%M:%S ") + message + "\n")
+    except OSError:
         pass
-    intf = dev.get_active_configuration()[(0, 0)]
-    out = usb.util.find_descriptor(
-        intf,
-        custom_match=lambda e: usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_OUT,
-    )
-    out.write(SWITCH_MESSAGE)
+
+
+def eject_virtual_cd():
+    tree = subprocess.run(["ioreg", "-r", "-n", "HUAWEI Mobile", "-l", "-w0"], capture_output=True, text=True).stdout
+    for disk in sorted(set(re.findall(r'"BSD Name" = "(disk\d+)"', tree))):
+        subprocess.run(["diskutil", "eject", disk], capture_output=True)
 
 
 def switch_with_admin_prompt():
@@ -73,7 +110,11 @@ def switch_with_admin_prompt():
     script = f'do shell script "{command}" with administrator privileges'
     result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     if result.returncode != 0:
-        raise ModemError(result.stderr.strip() or "Переключение отменено")
+        if "User canceled" in result.stderr or "-128" in result.stderr:
+            raise ModemError("Переключение отменено")
+        # Show the last line of the root process error, not the whole traceback.
+        lines = [l for l in result.stderr.strip().splitlines() if l.strip()]
+        raise ModemError(lines[-1].split("ModemError: ")[-1] if lines else "Переключение не удалось")
     for _ in range(20):
         time.sleep(1)
         if find_device()[1] == "modem":
@@ -175,7 +216,26 @@ class Modem:
             "imei": fields.get("IMEI"),
             "hardware": (self.query("AT^HWVER", "^HWVER:") or "").strip('"') or None,
             "lock": lock_state,
+            "cd_on_startup": self.cd_on_startup(),
         }
+
+    def cd_on_startup(self):
+        """True if the modem starts as a CD-ROM, None if the firmware can't tell."""
+        ports = next((l for l in self.at("AT^SETPORT?") if ";" in l), None)
+        if not ports:
+            return None
+        return ports.split(";")[0].strip().upper() != "FF"
+
+    def disable_cd_on_startup(self):
+        """Make the modem boot straight into modem mode; reversible via AT^SETPORT."""
+        ports = next((l for l in self.at("AT^SETPORT?") if ";" in l), None)
+        if not ports:
+            raise ModemError("Прошивка модема не поддерживает AT^SETPORT")
+        startup, modem_ports = ports.split(";", 1)
+        if startup.strip().upper() == "FF":
+            return
+        if "OK" not in self.at(f'AT^SETPORT="FF;{modem_ports.strip().upper()}"'):
+            raise ModemError("Модем не принял настройку")
 
     def status(self):
         self.at("AT+COPS=3,0")
